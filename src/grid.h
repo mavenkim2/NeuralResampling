@@ -29,26 +29,67 @@ NT_DEVICE inline uint32_t SpatialHash(uint3 vertex)
     return result;
 }
 
-template <uint32_t numLevels>
+NT_DEVICE inline float Quartic(float x, float invRadius)
+{
+    float u = x * invRadius;
+    float tmp = fmaxf(1.0f - u * u, 0.0f);
+    return (15.0f / 16.0f) * tmp * tmp;
+}
+
+NT_DEVICE inline float QuarticCDFDeriv(float x, float invRadius)
+{
+    return Quartic(x, invRadius) * invRadius;
+}
+
+NT_DEVICE inline float QuarticCDF(float x, float invRadius)
+{
+    float u = x * invRadius;
+    float u2 = u * u;
+    float u4 = u2 * u2;
+    float v = (15.0f / 16.0f) * u * (1.0f - (2.0f / 3.0f) * u2 + (1.0f / 5.0f) * u4) + 0.5f;
+    return Clamp(v, 0.0f, 1.0f);
+}
+
+template <uint32_t numBins>
+NT_DEVICE inline void OneBlobEncoding(float s, __half *encoding)
+{
+    float invRadius = float(numBins);
+    float leftCDF = QuarticCDF(-s, invRadius) /*+ QuarticCDF(-s - 1, invRadius) */ +
+                    QuarticCDF(-s + 1, invRadius);
+
+    NRS_UNROLL
+    for (uint32_t bin = 0; bin < numBins; bin++)
+    {
+        float boundary = (bin + 1) / float(numBins);
+        float rightCDF = QuarticCDF(boundary - s, invRadius) +
+                         QuarticCDF(boundary - s - 1, invRadius) +
+                         QuarticCDF(boundary - s + 1, invRadius);
+        encoding[bin] = __half2float(rightCDF - leftCDF);
+        leftCDF = rightCDF;
+    }
+}
+
+template <uint32_t numLevels, uint32_t numBins>
 __global__ void something(Grid<numLevels> grid, Bounds sceneBounds)
 {
     // TODO: get samples somehow :)
     float3 position = make_float3(0.f);
+    float3 direction = make_float3(0.f);
 
     float3 invHalfExtent = sceneBounds.max - sceneBounds.min;
     invHalfExtent.x = invHalfExtent.x == 0.f ? 0.f : 1.f / invHalfExtent.x;
     invHalfExtent.y = invHalfExtent.y == 0.f ? 0.f : 1.f / invHalfExtent.y;
     invHalfExtent.z = invHalfExtent.z == 0.f ? 0.f : 1.f / invHalfExtent.z;
 
-    // TODO: do you need the scene bounds?
-    float3 relativeScenePosition = (position - sceneBounds.min) * invHalfExtent;
+    // TODO: I don't think you need to scale the position?
+    // float3 relativeScenePosition = (position - sceneBounds.min) * invHalfExtent;
 
-    __half featureVector[numLevels * 2];
+    __half featureVector[numLevels * 2 + 3 * numBins];
     NRS_UNROLL
     for (uint32_t level = 0; level < numLevels; level++)
     {
         float levelResolution = level * powf(grid.b, level);
-        float3 gridPosition = relativeScenePosition * levelResolution;
+        float3 gridPosition = position * levelResolution;
         int3 gridVertexLow = Floor(gridPosition);
         int3 gridVertexHigh = Ceil(gridPosition);
         float3 weight = gridPosition - Floor(gridPosition);
@@ -75,6 +116,9 @@ __global__ void something(Grid<numLevels> grid, Bounds sceneBounds)
         featureVector[2 * level] = __float2half(feature.x);
         featureVector[2 * level + 1] = __float2half(feature.y);
     }
+    OneBlobEncoding<numBins>(direction.x, featureVector + 2 * numLevels);
+    OneBlobEncoding<numBins>(direction.y, featureVector + 2 * numLevels + numBins);
+    OneBlobEncoding<numBins>(direction.z, featureVector + 2 * numLevels + 2 * numBins);
 }
 
 } // namespace nrs
