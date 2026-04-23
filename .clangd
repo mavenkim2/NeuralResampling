@@ -1,4 +1,0 @@
-CompileFlags:
-  Add: 
-    - -IC:.\\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1\include
-    - -IC:\Users\maven\workspace\NeuralResampling\src\

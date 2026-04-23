@@ -1,3 +1,6 @@
-[submodule "src/third_party/tiny-cuda-nn"]
-	path = src/third_party/tiny-cuda-nn
-	url = https://github.com/mavenkim2/tiny-cuda-nn.git
+[submodule "openpgl"]
+	path = openpgl
+	url = https://github.com/mavenkim2/openpgl.git
+[submodule "stb"]
+	path = stb
+	url = https://github.com/nothings/stb.git
